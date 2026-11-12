@@ -1,0 +1,6 @@
+{
+  "id": "paseo-direnv",
+  "name": "direnv",
+  "description": "Loads each agent's direnv environment and lets you allow a blocked .envrc after reading it",
+  "requirements": { "paseo": ">=0.15.3" }
+}

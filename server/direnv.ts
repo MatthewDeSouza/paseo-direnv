@@ -1,0 +1,114 @@
+// Pure logic for reading direnv output and applying the worktree trust rule.
+// Nothing here touches the filesystem or starts a process.
+
+export type Allowed = "allowed" | "not-allowed" | "denied";
+
+export interface FoundRC {
+  path: string;
+  allowed: Allowed;
+}
+
+const ALLOWED_CODES: Record<number, Allowed> = { 0: "allowed", 1: "not-allowed", 2: "denied" };
+
+/** Parses `direnv status --json`. Returns `null` where no `.envrc` applies. */
+export function parseStatus(stdout: string): FoundRC | null {
+  const data: unknown = JSON.parse(stdout);
+  if (!isRecord(data) || !isRecord(data.state)) {
+    throw new Error("direnv status --json has no state object");
+  }
+  const found = data.state.foundRC;
+  if (found === null || found === undefined) return null;
+  if (!isRecord(found) || typeof found.path !== "string" || typeof found.allowed !== "number") {
+    throw new Error("direnv status --json has a malformed foundRC");
+  }
+  const allowed = ALLOWED_CODES[found.allowed];
+  if (!allowed) throw new Error(`direnv status --json reports unknown allowed ${found.allowed}`);
+  return { path: found.path, allowed };
+}
+
+/**
+ * Parses `direnv export json`. Empty output means no change. `null` values mark
+ * variables direnv unsets, which an override map cannot express, so they are dropped.
+ */
+export function parseExport(stdout: string): Record<string, string> {
+  if (stdout.trim() === "") return {};
+  const data: unknown = JSON.parse(stdout);
+  if (!isRecord(data)) throw new Error("direnv export json is not an object");
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "string") env[key] = value;
+  }
+  return env;
+}
+
+/** Merges the direnv values over the hook's input env. */
+export function mergeEnv(
+  input: Record<string, string>,
+  loaded: Record<string, string>,
+): Record<string, string> {
+  return { ...input, ...loaded };
+}
+
+/**
+ * Finds the `.envrc` in the main checkout that a worktree's `.envrc` corresponds to.
+ * All paths must be absolute and canonical. Returns `null` when there is no main
+ * checkout to inherit from: a bare repository, the main checkout itself, or an
+ * `.envrc` outside the worktree.
+ */
+export function mainCheckoutEnvrc(input: {
+  worktreeRoot: string;
+  gitCommonDir: string;
+  envrcPath: string;
+}): string | null {
+  const { worktreeRoot, gitCommonDir, envrcPath } = input;
+  if (basename(gitCommonDir) !== ".git") return null;
+  const mainRoot = dirname(gitCommonDir);
+  if (mainRoot === worktreeRoot) return null;
+  const prefix = worktreeRoot.endsWith("/") ? worktreeRoot : `${worktreeRoot}/`;
+  if (!envrcPath.startsWith(prefix)) return null;
+  return `${mainRoot}/${envrcPath.slice(prefix.length)}`;
+}
+
+/** The worktree inherits trust only from an allowed, byte-identical main `.envrc`. */
+export function inheritsTrust(input: {
+  mainStatus: FoundRC | null;
+  mainEnvrc: string;
+  mainContents: Uint8Array | null;
+  worktreeContents: Uint8Array;
+}): boolean {
+  const { mainStatus, mainEnvrc, mainContents, worktreeContents } = input;
+  if (!mainStatus || mainStatus.path !== mainEnvrc || mainStatus.allowed !== "allowed") {
+    return false;
+  }
+  if (!mainContents || mainContents.length !== worktreeContents.length) return false;
+  return mainContents.every((byte, index) => byte === worktreeContents[index]);
+}
+
+const DIRENV_STATE = new Set(["DIRENV_DIR", "DIRENV_FILE", "DIRENV_DIFF", "DIRENV_WATCHES"]);
+
+/**
+ * Drops direnv's loaded-state variables so a daemon started inside a direnv shell
+ * does not make direnv diff against that shell. Settings such as `DIRENV_CONFIG` stay.
+ */
+export function cleanProcessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const clean: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!DIRENV_STATE.has(key)) clean[key] = value;
+  }
+  return clean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function basename(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1);
+}
+
+function dirname(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const index = trimmed.lastIndexOf("/");
+  return index <= 0 ? "/" : trimmed.slice(0, index);
+}
