@@ -1,0 +1,8 @@
+# Every action in .github/workflows is pinned to a commit sha. Dependabot
+# raises the bumps as pull requests, which run the same build.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

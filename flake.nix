@@ -82,6 +82,7 @@
             pkgs.nodejs_22
             pkgs.typescript
             pkgs.direnv
+            pkgs.just
           ];
         };
       });

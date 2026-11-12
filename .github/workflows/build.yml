@@ -1,0 +1,45 @@
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+# A newer push to a pull request replaces the run before it. Each commit on
+# main gets a group of its own, so a run there is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  # nix flake check builds the checks of the runner's own system, so each
+  # system in flake.nix gets a native runner.
+  build:
+    name: Build (${{ matrix.system }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-latest
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: aarch64-darwin
+            runner: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@16f94ba7aae399b9f9077c254b6719ec6de7e3e3 # v3
+        with:
+          # Nix leaves the sandbox off on macOS unless told.
+          extra-conf: |
+            fallback = true
+            download-attempts = 10
+            sandbox = true
+      - name: Type-check and test
+        run: nix flake check --print-build-logs
+      - name: Build the plugin
+        run: nix build --print-build-logs '.#packages.${{ matrix.system }}.default'
