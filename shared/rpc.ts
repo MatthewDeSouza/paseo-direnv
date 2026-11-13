@@ -1,7 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
-export const SessionState = z.enum(["loaded", "blocked", "denied", "error", "none", "loading", "ready"]);
+export const SessionState = z.enum(["loaded", "blocked", "denied", "error", "none", "loading", "ready", "stale"]);
 export type SessionState = z.infer<typeof SessionState>;
 
 export const statusRpc = defineRpc({
@@ -29,7 +29,8 @@ export const allowRpc = defineRpc({
   ]),
 });
 
-// Reopens an agent whose environment became ready after its open went ahead without it.
+// Reopens an agent whose environment became ready after its open went ahead
+// without it, or whose watched files changed after it loaded.
 export const reloadRpc = defineRpc({
   name: "direnv.reload",
   input: z.object({ agentId: z.string().min(1) }),

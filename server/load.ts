@@ -1,19 +1,23 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   cleanProcessEnv,
   inheritsTrust,
+  isStale,
   mainCheckoutEnvrc,
   parseExport,
   parseStatus,
+  parseWatches,
   type FoundRC,
+  type Watch,
 } from "./direnv";
 
 export type AgentState =
   | { state: "none" }
-  | { state: "loaded" | "blocked" | "denied" | "loading" | "ready"; path: string }
+  | { state: "loaded"; path: string; watches: Watch[] }
+  | { state: "blocked" | "denied" | "loading" | "ready"; path: string }
   | { state: "error"; path: string | null; message: string };
 
 export interface LoadResult {
@@ -52,7 +56,19 @@ export async function loadEnvironment(cwd: string, signal: AbortSignal): Promise
     return { state: { state: "blocked", path: status.path }, env: {} };
   }
   const env = await untilAborted(sharedExport(cwd), signal, status.path);
-  return { state: { state: "loaded", path: status.path }, env };
+  const watches = env.DIRENV_WATCHES ? parseWatches(env.DIRENV_WATCHES) : [];
+  return { state: { state: "loaded", path: status.path, watches }, env };
+}
+
+/** Compares the watched files against the disk. A file that cannot be read counts as missing. */
+export async function watchesChanged(recorded: Watch[]): Promise<boolean> {
+  const current = await Promise.all(
+    recorded.map(async ({ path: file }): Promise<Watch> => {
+      const info = await stat(file).catch(() => null);
+      return { path: file, modtime: info ? Math.floor(info.mtimeMs / 1000) : 0, exists: info !== null };
+    }),
+  );
+  return isStale(recorded, current);
 }
 
 function sharedExport(cwd: string): Promise<Record<string, string>> {

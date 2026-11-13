@@ -10,7 +10,7 @@ import { reloadRpc, statusRpc } from "./shared/rpc";
 type Status = RpcOutput<typeof statusRpc>;
 
 // States that show a pill. Every other state removes it.
-const SHOWN = new Set<Status["state"]>(["blocked", "error", "loading", "ready"]);
+const SHOWN = new Set<Status["state"]>(["blocked", "error", "loading", "ready", "stale"]);
 
 // How often a loading environment is asked about, since its completion moves no agent status.
 const LOADING_POLL_MS = 5_000;
@@ -36,6 +36,18 @@ export default function contribute(client: PluginClientContext) {
 
   const Content = createEnvrcContent(removePill);
 
+  function reload(agentId: string): PluginButton["behavior"] {
+    return {
+      kind: "action",
+      async onPress() {
+        const result = await client.rpc(reloadRpc, { agentId });
+        // Paseo shows a thrown error as a toast.
+        if (!result.ok) throw new Error(result.message);
+        removePill(agentId);
+      },
+    };
+  }
+
   function button(status: Status, agentId: string): PluginButton {
     const behavior = { kind: "popover" as const, Content };
     switch (status.state) {
@@ -48,15 +60,14 @@ export default function contribute(client: PluginClientContext) {
           title: "Reload the agent with its direnv environment",
           label: "Reload with direnv",
           icon: "RefreshCw",
-          behavior: {
-            kind: "action",
-            async onPress() {
-              const result = await client.rpc(reloadRpc, { agentId });
-              // Paseo shows a thrown error as a toast.
-              if (!result.ok) throw new Error(result.message);
-              removePill(agentId);
-            },
-          },
+          behavior: reload(agentId),
+        };
+      case "stale":
+        return {
+          title: "The .envrc or a file it watches changed. Reload the agent to load it again.",
+          label: "direnv changed",
+          icon: "RefreshCw",
+          behavior: reload(agentId),
         };
       default:
         return { title: "direnv failed to load", label: "direnv error", icon: "TriangleAlert", behavior };

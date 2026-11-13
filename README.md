@@ -36,6 +36,12 @@ that it restarts with the environment. The daemon takes the path from its own
 record of the agent and never from the client. An `.envrc` that was denied with
 `direnv deny` stays denied and shows no pill.
 
+An agent keeps the environment it opened with. The plugin records the files
+direnv watches, which are `.envrc`, its allow and deny records, and every file
+named with `watch_file`. Once one of them changes, the composer shows a
+`direnv changed` pill that reopens the agent with the new environment. The check
+runs whenever the agent's status changes, such as at the end of a turn.
+
 The plugin runs `direnv` and `git` from the daemon's `PATH` through `execFile`,
 without a shell, and sends nothing off the machine.
 

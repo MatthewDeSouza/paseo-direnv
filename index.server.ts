@@ -1,7 +1,14 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { readFile } from "node:fs/promises";
 import { mergeEnv } from "./server/direnv";
-import { allowEnvrc, loadEnvironment, sha256, StillLoading, type AgentState } from "./server/load";
+import {
+  allowEnvrc,
+  loadEnvironment,
+  sha256,
+  StillLoading,
+  watchesChanged,
+  type AgentState,
+} from "./server/load";
 import { allowRpc, reloadRpc, statusRpc } from "./shared/rpc";
 
 // Ends before Paseo's own 30 second limit on agent.open.before.
@@ -49,8 +56,16 @@ export default function contribute(server: PluginServerContext) {
     states.delete(agent.id);
   });
 
-  server.handle(statusRpc, async ({ agentId }) => {
+  // A loaded environment is reported stale once a file direnv watches has changed.
+  async function current(agentId: string): Promise<AgentState | { state: "stale"; path: string }> {
     const state = states.get(agentId) ?? { state: "none" };
+    if (state.state !== "loaded") return state;
+    const changed = await watchesChanged(state.watches).catch(() => false);
+    return changed ? { state: "stale", path: state.path } : state;
+  }
+
+  server.handle(statusRpc, async ({ agentId }) => {
+    const state = await current(agentId);
     const result = {
       state: state.state,
       path: "path" in state ? state.path : null,
@@ -87,7 +102,8 @@ export default function contribute(server: PluginServerContext) {
   });
 
   server.handle(reloadRpc, async ({ agentId }, { paseo }) => {
-    if (states.get(agentId)?.state !== "ready") {
+    const state = (await current(agentId)).state;
+    if (state !== "ready" && state !== "stale") {
       return { ok: false as const, message: "This agent has no environment waiting to load." };
     }
     try {

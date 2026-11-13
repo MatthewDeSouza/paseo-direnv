@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { deflateSync } from "node:zlib";
 import {
   cleanProcessEnv,
   inheritsTrust,
+  isStale,
   mainCheckoutEnvrc,
   mergeEnv,
   parseExport,
   parseStatus,
+  parseWatches,
 } from "../server/direnv.ts";
 
 const status = (foundRC: unknown) =>
@@ -129,5 +132,45 @@ describe("cleanProcessEnv", () => {
       cleanProcessEnv({ PATH: "/bin", DIRENV_DIR: "-/x", DIRENV_DIFF: "d", DIRENV_FILE: "f", DIRENV_WATCHES: "w", DIRENV_CONFIG: "/c" }),
       { PATH: "/bin", DIRENV_CONFIG: "/c" },
     );
+  });
+});
+
+describe("parseWatches", () => {
+  const encode = (value: unknown) => deflateSync(JSON.stringify(value)).toString("base64url");
+
+  it("decodes direnv's encoding", () => {
+    const watches = [
+      { path: "/r/.envrc", modtime: 1794533418, exists: true },
+      { path: "/data/direnv/deny/abc", modtime: 0, exists: false },
+    ];
+    assert.deepEqual(parseWatches(encode(watches)), watches);
+  });
+
+  it("rejects a malformed list", () => {
+    assert.throws(() => parseWatches(encode({ path: "/r/.envrc" })), /not a list/);
+    assert.throws(() => parseWatches(encode([{ path: "/r/.envrc", modtime: "1", exists: true }])), /malformed/);
+  });
+});
+
+describe("isStale", () => {
+  const envrc = { path: "/r/.envrc", modtime: 100, exists: true };
+  const deny = { path: "/d/deny/abc", modtime: 0, exists: false };
+
+  it("is fresh while every file matches", () => {
+    assert.equal(isStale([envrc, deny], [envrc, deny]), false);
+  });
+
+  it("is stale after a change in modification time", () => {
+    assert.equal(isStale([envrc], [{ ...envrc, modtime: 101 }]), true);
+  });
+
+  it("is stale when a file appears or vanishes", () => {
+    assert.equal(isStale([deny], [{ ...deny, exists: true, modtime: 5 }]), true);
+    assert.equal(isStale([envrc], [{ ...envrc, exists: false, modtime: 0 }]), true);
+    assert.equal(isStale([envrc], []), true);
+  });
+
+  it("ignores the modification time of a file that is still missing", () => {
+    assert.equal(isStale([deny], [{ ...deny, modtime: 7 }]), false);
   });
 });

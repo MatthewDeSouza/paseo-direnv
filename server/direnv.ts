@@ -1,6 +1,8 @@
 // Pure logic for reading direnv output and applying the worktree trust rule.
 // Nothing here touches the filesystem or starts a process.
 
+import { inflateSync } from "node:zlib";
+
 export type Allowed = "allowed" | "not-allowed" | "denied";
 
 export interface FoundRC {
@@ -39,6 +41,45 @@ export function parseExport(stdout: string): Record<string, string> {
     if (typeof value === "string") env[key] = value;
   }
   return env;
+}
+
+/** A file direnv watches, as recorded when the environment was loaded. */
+export interface Watch {
+  path: string;
+  /** Seconds since the epoch, or 0 for a file that did not exist. */
+  modtime: number;
+  exists: boolean;
+}
+
+/**
+ * Decodes `DIRENV_WATCHES`, which is URL-safe base64 of zlib-compressed JSON.
+ * It lists `.envrc`, its allow and deny records, and every `watch_file`.
+ */
+export function parseWatches(value: string): Watch[] {
+  const data: unknown = JSON.parse(inflateSync(Buffer.from(value, "base64url")).toString("utf8"));
+  if (!Array.isArray(data)) throw new Error("DIRENV_WATCHES is not a list");
+  return data.map((entry: unknown) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.path !== "string" ||
+      typeof entry.modtime !== "number" ||
+      typeof entry.exists !== "boolean"
+    ) {
+      throw new Error("DIRENV_WATCHES has a malformed entry");
+    }
+    return { path: entry.path, modtime: entry.modtime, exists: entry.exists };
+  });
+}
+
+/** The environment is stale once any watched file appeared, vanished, or changed its modification time. */
+export function isStale(recorded: Watch[], current: Watch[]): boolean {
+  const now = new Map(current.map((watch) => [watch.path, watch]));
+  return recorded.some((watch) => {
+    const seen = now.get(watch.path);
+    if (!seen) return true;
+    if (seen.exists !== watch.exists) return true;
+    return watch.exists && seen.modtime !== watch.modtime;
+  });
 }
 
 /** Merges the direnv values over the hook's input env. */
