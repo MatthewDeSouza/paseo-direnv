@@ -1,7 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
-export const SessionState = z.enum(["loaded", "blocked", "denied", "error", "none"]);
+export const SessionState = z.enum(["loaded", "blocked", "denied", "error", "none", "loading", "ready"]);
 export type SessionState = z.infer<typeof SessionState>;
 
 export const statusRpc = defineRpc({
@@ -23,6 +23,16 @@ export const allowRpc = defineRpc({
     agentId: z.string().min(1),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
   }),
+  output: z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true) }),
+    z.object({ ok: z.literal(false), message: z.string() }),
+  ]),
+});
+
+// Reopens an agent whose environment became ready after its open went ahead without it.
+export const reloadRpc = defineRpc({
+  name: "direnv.reload",
+  input: z.object({ agentId: z.string().min(1) }),
   output: z.discriminatedUnion("ok", [
     z.object({ ok: z.literal(true) }),
     z.object({ ok: z.literal(false), message: z.string() }),

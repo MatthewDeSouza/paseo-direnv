@@ -15,9 +15,18 @@ Claude alike, since the variables travel with the launch request rather than
 with the process directory.
 
 A load that fails never stops the agent from opening. A missing `direnv` or
-`git`, an `.envrc` that exits with an error, or a load that takes longer than
-25 seconds leaves the environment unchanged, and the composer shows a
-`direnv error` pill with the message.
+`git`, or an `.envrc` that exits with an error, leaves the environment unchanged,
+and the composer shows a `direnv error` pill with the message.
+
+A load that takes longer than 25 seconds also lets the agent open without the
+environment, since Paseo fails an open that waits 30. This is typical of a first
+`use flake`, which builds the devshell. The plugin keeps `direnv export` running
+so the build completes, for up to 30 minutes, and the composer shows a
+`direnv loading` pill. Agents opening in the same directory meanwhile share that
+one export. When it finishes, the pill becomes `Reload with direnv`, which
+reopens the agent with the environment. The reopen runs `direnv export` again,
+which a cached devshell answers quickly. An `.envrc` that is slow on every run
+returns to the loading pill each time.
 
 When the `.envrc` is not allowed, the agent starts without it and the composer
 shows an `.envrc blocked` pill. The pill opens the path and the full file. `Allow`

@@ -1,8 +1,8 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { readFile } from "node:fs/promises";
 import { mergeEnv } from "./server/direnv";
-import { allowEnvrc, loadEnvironment, sha256, type AgentState } from "./server/load";
-import { allowRpc, statusRpc } from "./shared/rpc";
+import { allowEnvrc, loadEnvironment, sha256, StillLoading, type AgentState } from "./server/load";
+import { allowRpc, reloadRpc, statusRpc } from "./shared/rpc";
 
 // Ends before Paseo's own 30 second limit on agent.open.before.
 const LOAD_TIMEOUT_MS = 25_000;
@@ -18,6 +18,26 @@ export default function contribute(server: PluginServerContext) {
       if (state.state !== "loaded") return request;
       return { ...request, env: mergeEnv(request.env, env) };
     } catch (error) {
+      if (error instanceof StillLoading) {
+        const { agentId } = request;
+        const path = error.path;
+        console.error(`direnv is still loading ${path} for agent ${agentId}, which opens without it`);
+        states.set(agentId, { state: "loading", path });
+        // Only a state this load set is moved on. A later open may have replaced it.
+        const current = () => {
+          const state = states.get(agentId);
+          return state?.state === "loading" && state.path === path;
+        };
+        error.done.then(
+          () => {
+            if (current()) states.set(agentId, { state: "ready", path });
+          },
+          (failure: unknown) => {
+            if (current()) states.set(agentId, { state: "error", path, message: describe(failure) });
+          },
+        );
+        return request;
+      }
       const message = describe(error);
       console.error(`direnv load failed for agent ${request.agentId} in ${request.cwd}: ${message}`);
       states.set(request.agentId, { state: "error", path: null, message });
@@ -59,6 +79,18 @@ export default function contribute(server: PluginServerContext) {
         return { ok: false as const, message: `${state.path} changed after it was shown. Reopen it and read it again.` };
       }
       await allowEnvrc(state.path);
+      await paseo.agents.ref(agentId).reload();
+      return { ok: true as const };
+    } catch (error) {
+      return { ok: false as const, message: describe(error) };
+    }
+  });
+
+  server.handle(reloadRpc, async ({ agentId }, { paseo }) => {
+    if (states.get(agentId)?.state !== "ready") {
+      return { ok: false as const, message: "This agent has no environment waiting to load." };
+    }
+    try {
       await paseo.agents.ref(agentId).reload();
       return { ok: true as const };
     } catch (error) {

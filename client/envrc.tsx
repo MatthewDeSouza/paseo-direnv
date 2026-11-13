@@ -109,6 +109,20 @@ export function createEnvrcContent(
       );
     }
 
+    if (status.state === "loading") {
+      return (
+        <View style={styles.body}>
+          <Text style={styles.label}>
+            direnv is still loading the environment, often because a first use flake is building the
+            devshell. The agent runs without it for now. When the load finishes, this pill offers Reload.
+          </Text>
+          <Text selectable style={styles.text}>
+            {status.path}
+          </Text>
+        </View>
+      );
+    }
+
     if (status.state !== "blocked" || status.contents === null) {
       return (
         <View style={styles.body}>

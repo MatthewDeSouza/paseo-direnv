@@ -13,12 +13,34 @@ import {
 
 export type AgentState =
   | { state: "none" }
-  | { state: "loaded" | "blocked" | "denied"; path: string }
+  | { state: "loaded" | "blocked" | "denied" | "loading" | "ready"; path: string }
   | { state: "error"; path: string | null; message: string };
 
 export interface LoadResult {
   state: AgentState;
   env: Record<string, string>;
+}
+
+// A first `use flake` builds the devshell, which can outlast the hook. The
+// export then keeps running so the build completes, up to this limit.
+const BACKGROUND_LIMIT_MS = 30 * 60_000;
+
+/** One export per directory at a time, shared by every agent opening there. */
+const exports = new Map<string, Promise<Record<string, string>>>();
+
+/**
+ * Thrown when the open has to go ahead before `direnv export` finishes.
+ * `done` settles when the export that is still running does.
+ */
+export class StillLoading extends Error {
+  readonly path: string;
+  readonly done: Promise<unknown>;
+
+  constructor(path: string, done: Promise<unknown>) {
+    super(`direnv is still loading ${path}`);
+    this.path = path;
+    this.done = done;
+  }
 }
 
 /** Loads the direnv environment for `cwd`, inheriting trust from the main checkout of a worktree. */
@@ -29,8 +51,29 @@ export async function loadEnvironment(cwd: string, signal: AbortSignal): Promise
   if (status.allowed === "not-allowed" && !(await inheritTrust(cwd, status.path, signal))) {
     return { state: { state: "blocked", path: status.path }, env: {} };
   }
-  const env = parseExport(await run("direnv", ["export", "json"], cwd, signal));
+  const env = await untilAborted(sharedExport(cwd), signal, status.path);
   return { state: { state: "loaded", path: status.path }, env };
+}
+
+function sharedExport(cwd: string): Promise<Record<string, string>> {
+  let pending = exports.get(cwd);
+  if (!pending) {
+    pending = run("direnv", ["export", "json"], cwd, AbortSignal.timeout(BACKGROUND_LIMIT_MS))
+      .then(parseExport)
+      .finally(() => exports.delete(cwd));
+    exports.set(cwd, pending);
+  }
+  return pending;
+}
+
+/** Waits for `work` until `signal` aborts, then leaves it running and throws `StillLoading`. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal, envrcPath: string): Promise<T> {
+  if (signal.aborted) return Promise.reject(new StillLoading(envrcPath, work));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new StillLoading(envrcPath, work));
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 /** Runs `direnv allow` on `envrcPath` from its own directory. */
