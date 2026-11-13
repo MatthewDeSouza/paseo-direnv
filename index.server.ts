@@ -18,6 +18,9 @@ export default function contribute(server: PluginServerContext) {
   const states = new Map<string, AgentState>();
 
   const removeHook = server.addHook("agent.open.before", async ({ request }, context) => {
+    // Paseo opens an archived agent only to read its history, which runs nothing,
+    // and its directory may already be gone with its worktree.
+    if (request.purpose === "history") return request;
     const signal = AbortSignal.any([context.signal, AbortSignal.timeout(LOAD_TIMEOUT_MS)]);
     try {
       const { state, env } = await loadEnvironment(request.cwd, signal);

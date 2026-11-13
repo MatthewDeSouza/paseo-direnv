@@ -7,7 +7,8 @@ and direnv `2.38`.
 ## What it does
 
 The plugin runs in the `agent.open.before` hook, which Paseo awaits before it
-creates, resumes, refreshes or imports an agent. The hook runs `direnv status
+creates, resumes, refreshes or imports an agent. Opens that only read an agent's
+history are skipped. The hook runs `direnv status
 --json` in the agent's directory. When the `.envrc` there is allowed, it runs
 `direnv export json` and merges the result into the agent's launch environment.
 The agent therefore has the environment from its first command, for Codex and
