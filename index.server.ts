@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 import { mergeEnv } from "./server/direnv";
 import {
   allowEnvrc,
+  denyEnvrc,
   loadEnvironment,
   sha256,
   StillLoading,
   watchesChanged,
   type AgentState,
 } from "./server/load";
-import { allowRpc, reloadRpc, statusRpc } from "./shared/rpc";
+import { allowRpc, denyRpc, reloadRpc, statusRpc } from "./shared/rpc";
 
 // Ends before Paseo's own 30 second limit on agent.open.before.
 const LOAD_TIMEOUT_MS = 25_000;
@@ -98,6 +99,26 @@ export default function contribute(server: PluginServerContext) {
       }
       await allowEnvrc(state.path);
       await paseo.agents.ref(agentId).reload();
+      return { ok: true as const };
+    } catch (error) {
+      return { ok: false as const, message: describe(error) };
+    }
+  });
+
+  server.handle(denyRpc, async ({ agentId, sha256: shown }) => {
+    // As with allow, the path comes from the server's own state.
+    const state = states.get(agentId);
+    if (state?.state !== "blocked") {
+      return { ok: false as const, message: "This agent has no blocked .envrc." };
+    }
+    try {
+      const current = sha256(await readFile(state.path));
+      if (current !== shown) {
+        return { ok: false as const, message: `${state.path} changed after it was shown. Reopen it and read it again.` };
+      }
+      await denyEnvrc(state.path);
+      // The agent already runs without the environment, so it needs no reload.
+      states.set(agentId, { state: "denied", path: state.path });
       return { ok: true as const };
     } catch (error) {
       return { ok: false as const, message: describe(error) };

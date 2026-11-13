@@ -97,6 +97,11 @@ export async function allowEnvrc(envrcPath: string, signal?: AbortSignal): Promi
   await run("direnv", ["allow", envrcPath], path.dirname(envrcPath), signal);
 }
 
+/** Runs `direnv deny` on `envrcPath` from its own directory. */
+export async function denyEnvrc(envrcPath: string): Promise<void> {
+  await run("direnv", ["deny", envrcPath], path.dirname(envrcPath));
+}
+
 export function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }

@@ -39,3 +39,17 @@ export const reloadRpc = defineRpc({
     z.object({ ok: z.literal(false), message: z.string() }),
   ]),
 });
+
+// Denies a blocked .envrc by the hash the client showed. direnv records a denial
+// by path, so it holds after the file changes until direnv allow clears it.
+export const denyRpc = defineRpc({
+  name: "direnv.deny",
+  input: z.object({
+    agentId: z.string().min(1),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  }),
+  output: z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true) }),
+    z.object({ ok: z.literal(false), message: z.string() }),
+  ]),
+});

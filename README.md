@@ -34,8 +34,10 @@ shows an `.envrc blocked` pill. The pill opens the path and the full file. `Allo
 sends the SHA-256 of the text that was shown, and the daemon allows the file only
 if it still has that hash. It then runs `direnv allow` and reloads the agent so
 that it restarts with the environment. The daemon takes the path from its own
-record of the agent and never from the client. An `.envrc` that was denied with
-`direnv deny` stays denied and shows no pill.
+record of the agent and never from the client. `Deny` runs `direnv deny` under
+the same hash check, and the agent keeps running without the environment.
+direnv records a denial by path rather than by content, so a denied `.envrc`
+stays denied after it changes and shows no pill until `direnv allow` clears it.
 
 An agent keeps the environment it opened with. The plugin records the files
 direnv watches, which are `.envrc`, its allow and deny records, and every file

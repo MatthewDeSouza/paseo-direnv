@@ -4,27 +4,29 @@ import { ScrollView } from "@getpaseo/plugin/client/ui";
 import type { RpcOutput } from "@getpaseo/plugin";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import { allowRpc, statusRpc } from "../shared/rpc";
+import { allowRpc, denyRpc, statusRpc } from "../shared/rpc";
 
 type Status = RpcOutput<typeof statusRpc>;
 
 const MONOSPACE = Platform.select({ ios: "Menlo", default: "monospace" });
 
 /**
- * Builds the popover body for the composer pill. `onAllowed` runs after the
- * server has allowed the file and reloaded the agent.
+ * Builds the popover body for the composer pill. `onDecided` runs after the
+ * server has allowed the file and reloaded the agent, or has denied the file.
  */
 export function createEnvrcContent(
-  onAllowed: (agentId: string) => void,
+  onDecided: (agentId: string) => void,
 ): ComponentType<PluginButtonContentProps> {
   return function EnvrcContent(props: PluginButtonContentProps) {
     const { theme, close } = props;
     const agentId = props.context === "agent" ? props.agentId : null;
     const getStatus = useRpc(statusRpc);
     const allow = useRpc(allowRpc);
+    const deny = useRpc(denyRpc);
     const [status, setStatus] = useState<Status | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
+    const [pending, setPending] = useState<"allow" | "deny" | null>(null);
+    const busy = pending !== null;
 
     useEffect(() => {
       if (!agentId) return;
@@ -71,14 +73,16 @@ export function createEnvrcContent(
       [theme, busy],
     );
 
-    async function onAllow(): Promise<void> {
+    // Both decisions send the hash of the text on screen, so the server refuses a file that changed.
+    async function decide(kind: "allow" | "deny"): Promise<void> {
       if (!agentId || !status?.sha256) return;
-      setBusy(true);
+      setPending(kind);
       setError(null);
       try {
-        const result = await allow({ agentId, sha256: status.sha256 });
+        const input = { agentId, sha256: status.sha256 };
+        const result = kind === "allow" ? await allow(input) : await deny(input);
         if (result.ok) {
-          onAllowed(agentId);
+          onDecided(agentId);
           close();
           return;
         }
@@ -86,7 +90,7 @@ export function createEnvrcContent(
       } catch (reason) {
         setError(describe(reason));
       } finally {
-        setBusy(false);
+        setPending(null);
       }
     }
 
@@ -147,6 +151,9 @@ export function createEnvrcContent(
           </ScrollView>
         </ScrollView>
         {error ? <Text style={styles.danger}>{error}</Text> : null}
+        <Text style={styles.label}>
+          Deny keeps this path from loading, even after the file changes, until you run direnv allow.
+        </Text>
         <View style={styles.row}>
           <Pressable accessibilityRole="button" onPress={close} style={styles.cancel}>
             <Text style={styles.text}>Cancel</Text>
@@ -154,10 +161,18 @@ export function createEnvrcContent(
           <Pressable
             accessibilityRole="button"
             disabled={busy}
-            onPress={() => void onAllow()}
+            onPress={() => void decide("deny")}
+            style={styles.cancel}
+          >
+            <Text style={styles.danger}>{pending === "deny" ? "Denying…" : "Deny"}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => void decide("allow")}
             style={styles.allow}
           >
-            <Text style={styles.allowText}>{busy ? "Allowing…" : "Allow"}</Text>
+            <Text style={styles.allowText}>{pending === "allow" ? "Allowing…" : "Allow"}</Text>
           </Pressable>
         </View>
       </View>
