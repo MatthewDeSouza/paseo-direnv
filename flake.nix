@@ -62,6 +62,8 @@
           };
           nativeBuildInputs = [
             pkgs.nodejs_22
+            pkgs.direnv
+            pkgs.git
             pkgs.importNpmLock.npmConfigHook
           ];
           npmDeps = pkgs.importNpmLock { npmRoot = ./.; };

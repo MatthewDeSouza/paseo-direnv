@@ -96,7 +96,9 @@ directory needs no build step and no `node_modules`.
 `nix develop` provides Node 22, TypeScript, direnv and just. `just setup`
 installs the SDK types from `package-lock.json`. `just typecheck` checks the
 server and client projects, and `just test` runs the unit tests for the
-parsing, worktree and merge logic in `server/direnv.ts`. `just check` runs both
+parsing, worktree and merge logic in `server/direnv.ts`, and the integration
+tests that run `server/load.ts` against real `direnv` and `git` in a scratch
+directory with its own `XDG_DATA_HOME`. `just check` runs both
 in the Nix sandbox through `nix flake check`, which is what CI runs on every
 push and pull request for `x86_64-linux`, `aarch64-linux` and `aarch64-darwin`.
 `just install` builds the package and installs it into the local daemon.

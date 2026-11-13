@@ -12,7 +12,7 @@ import {
   parseWatches,
   type FoundRC,
   type Watch,
-} from "./direnv";
+} from "./direnv.ts";
 
 export type AgentState =
   | { state: "none" }
