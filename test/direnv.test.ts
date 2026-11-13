@@ -10,6 +10,7 @@ import {
   parseExport,
   parseStatus,
   parseWatches,
+  worktreeTrust,
 } from "../server/direnv.ts";
 
 const status = (foundRC: unknown) =>
@@ -172,5 +173,29 @@ describe("isStale", () => {
 
   it("ignores the modification time of a file that is still missing", () => {
     assert.equal(isStale([deny], [{ ...deny, modtime: 7 }]), false);
+  });
+});
+
+describe("worktreeTrust", () => {
+  const setting = (trustWorktrees: boolean) => ({ status: "ready" as const, values: { trustWorktrees } });
+
+  it("lets variable 1 win over a setting of false", () => {
+    assert.deepEqual(worktreeTrust("1", setting(false)), { trustWorktrees: true, fromVariable: true, invalidVariable: false });
+  });
+
+  it("lets variable 0 win over a setting of true", () => {
+    assert.deepEqual(worktreeTrust("0", setting(true)), { trustWorktrees: false, fromVariable: true, invalidVariable: false });
+  });
+
+  it("uses the setting while the variable is unset", () => {
+    assert.deepEqual(worktreeTrust(undefined, setting(false)), { trustWorktrees: false, fromVariable: false, invalidVariable: false });
+  });
+
+  it("trusts when the setting is invalid and the variable is unset", () => {
+    assert.deepEqual(worktreeTrust(undefined, { status: "invalid" }), { trustWorktrees: true, fromVariable: false, invalidVariable: false });
+  });
+
+  it("treats any other variable value as 0 and flags it", () => {
+    assert.deepEqual(worktreeTrust("yes", setting(true)), { trustWorktrees: false, fromVariable: true, invalidVariable: true });
   });
 });

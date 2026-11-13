@@ -153,3 +153,29 @@ function dirname(path: string): string {
   const index = trimmed.lastIndexOf("/");
   return index <= 0 ? "/" : trimmed.slice(0, index);
 }
+
+export const TRUST_WORKTREES_VARIABLE = "PASEO_DIRENV_TRUST_WORKTREES";
+
+export interface WorktreeTrust {
+  trustWorktrees: boolean;
+  /** True when `PASEO_DIRENV_TRUST_WORKTREES` decided the value. */
+  fromVariable: boolean;
+  /** True when the variable holds a value other than `1` or `0`. */
+  invalidVariable: boolean;
+}
+
+/**
+ * Decides whether a worktree may inherit trust. A set variable wins, with `1`
+ * on and any other value off. Without it the host setting applies once it
+ * reads as `ready`, and otherwise trust stays on.
+ */
+export function worktreeTrust(
+  variable: string | undefined,
+  setting: { status: "ready"; values: { trustWorktrees: boolean } } | { status: string } | null,
+): WorktreeTrust {
+  if (variable !== undefined) {
+    return { trustWorktrees: variable === "1", fromVariable: true, invalidVariable: variable !== "1" && variable !== "0" };
+  }
+  const trustWorktrees = setting !== null && "values" in setting ? setting.values.trustWorktrees : true;
+  return { trustWorktrees, fromVariable: false, invalidVariable: false };
+}

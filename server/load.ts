@@ -47,12 +47,19 @@ export class StillLoading extends Error {
   }
 }
 
-/** Loads the direnv environment for `cwd`, inheriting trust from the main checkout of a worktree. */
-export async function loadEnvironment(cwd: string, signal: AbortSignal): Promise<LoadResult> {
+/**
+ * Loads the direnv environment for `cwd`. With `trustWorktrees`, a worktree
+ * inherits trust from its main checkout.
+ */
+export async function loadEnvironment(
+  cwd: string,
+  signal: AbortSignal,
+  { trustWorktrees = true }: { trustWorktrees?: boolean } = {},
+): Promise<LoadResult> {
   const status = await direnvStatus(cwd, signal);
   if (!status) return { state: { state: "none" }, env: {} };
   if (status.allowed === "denied") return { state: { state: "denied", path: status.path }, env: {} };
-  if (status.allowed === "not-allowed" && !(await inheritTrust(cwd, status.path, signal))) {
+  if (status.allowed === "not-allowed" && !(trustWorktrees && (await inheritTrust(cwd, status.path, signal)))) {
     return { state: { state: "blocked", path: status.path }, env: {} };
   }
   const env = await untilAborted(sharedExport(cwd), signal, status.path);

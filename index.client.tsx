@@ -5,6 +5,7 @@ import type {
 } from "@getpaseo/plugin/client";
 import type { RpcOutput } from "@getpaseo/plugin";
 import { createEnvrcContent } from "./client/envrc";
+import { WorktreeSettings } from "./client/settings";
 import { reloadRpc, statusRpc } from "./shared/rpc";
 
 type Status = RpcOutput<typeof statusRpc>;
@@ -35,6 +36,13 @@ export default function contribute(client: PluginClientContext) {
   }
 
   const Content = createEnvrcContent(removePill);
+
+  const removeSettings = client.addSettingsScreen({
+    id: "worktrees",
+    title: "Worktrees",
+    icon: "GitBranch",
+    Component: WorktreeSettings,
+  });
 
   function reload(agentId: string): PluginButton["behavior"] {
     return {
@@ -146,6 +154,7 @@ export default function contribute(client: PluginClientContext) {
   return () => {
     stopped = true;
     lifetime.abort();
+    removeSettings();
     for (const poll of polls.values()) clearTimeout(poll);
     polls.clear();
     for (const pill of pills.values()) pill.remove();

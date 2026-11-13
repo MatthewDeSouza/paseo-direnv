@@ -59,6 +59,19 @@ the plugin runs `direnv allow` on the worktree's file and loads it without a
 prompt. Any difference in content, a main file that is not allowed, or a bare
 repository with no main checkout leaves the worktree blocked.
 
+### Turning it off
+
+The switch `trustWorktrees` controls this inheritance. When it is off, a
+worktree's `.envrc` stays blocked until it is allowed, as a changed one does.
+The environment variable `PASEO_DIRENV_TRUST_WORKTREES` on the daemon sets it,
+with `1` for on and `0` for off. Any other value counts as `0` and is logged
+once to the daemon's stderr. Without the variable, the toggle **Allow identical
+.envrc in new worktrees** under **Settings → Plugins → direnv → Worktrees**
+applies, and without a readable setting the switch is on. The plugin reads the
+value at every agent open, so a change applies to the next agent. A host whose
+daemon sets the variable shows the toggle disabled at the variable's value,
+since the variable always wins over the saved setting.
+
 ## Limits
 
 direnv trusts the text of `.envrc` alone. A file containing `use flake` stays

@@ -77,6 +77,7 @@ describe("worktree trust", () => {
     git(main, "worktree", "add", "--quiet", path.join(root, "wt-same"));
     git(main, "worktree", "add", "--quiet", path.join(root, "wt-diff"));
     git(main, "worktree", "add", "--quiet", path.join(root, "wt-blocked-main"));
+    git(main, "worktree", "add", "--quiet", path.join(root, "wt-switched-off"));
   });
 
   it("leaves the worktree blocked while the main .envrc is not allowed", async () => {
@@ -89,6 +90,15 @@ describe("worktree trust", () => {
     const { state, env } = await load(path.join(root, "wt-same"));
     assert.equal(state.state, "loaded");
     assert.equal(env.PASEO_DIRENV_TEST, "main");
+  });
+
+  it("leaves an identical worktree blocked with trustWorktrees off", async () => {
+    const dir = path.join(root, "wt-switched-off");
+    const { state, env } = await loadEnvironment(dir, AbortSignal.timeout(HOOK_MS), { trustWorktrees: false });
+    assert.deepEqual(state, { state: "blocked", path: path.join(dir, ".envrc") });
+    assert.equal(env.PASEO_DIRENV_TEST, undefined);
+    const status = JSON.parse(execFileSync("direnv", ["status", "--json"], { cwd: dir, encoding: "utf8" }));
+    assert.equal(status.state.foundRC.allowed, 1);
   });
 
   it("blocks a worktree whose .envrc differs", async () => {

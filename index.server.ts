@@ -1,6 +1,6 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { readFile } from "node:fs/promises";
-import { mergeEnv } from "./server/direnv";
+import { mergeEnv, TRUST_WORKTREES_VARIABLE, worktreeTrust, type WorktreeTrust } from "./server/direnv";
 import {
   allowEnvrc,
   denyEnvrc,
@@ -10,13 +10,28 @@ import {
   watchesChanged,
   type AgentState,
 } from "./server/load";
-import { allowRpc, denyRpc, reloadRpc, statusRpc } from "./shared/rpc";
+import { allowRpc, denyRpc, reloadRpc, statusRpc, worktreeTrustRpc } from "./shared/rpc";
+import { worktreeSettings } from "./shared/settings";
 
 // Ends before Paseo's own 30 second limit on agent.open.before.
 const LOAD_TIMEOUT_MS = 25_000;
 
 export default function contribute(server: PluginServerContext) {
   const states = new Map<string, AgentState>();
+  const settings = server.registerSettings(worktreeSettings);
+  let warnedVariable: string | undefined;
+
+  // Read on every open, so a saved change applies to the next agent without a reload.
+  async function currentTrust(signal?: AbortSignal): Promise<WorktreeTrust> {
+    const variable = process.env[TRUST_WORKTREES_VARIABLE];
+    const setting = variable === undefined ? await beforeAbort(settings.read(), signal).catch(() => null) : null;
+    const trust = worktreeTrust(variable, setting);
+    if (trust.invalidVariable && warnedVariable !== variable) {
+      warnedVariable = variable;
+      console.error(`${TRUST_WORKTREES_VARIABLE}=${JSON.stringify(variable)} is neither 1 nor 0, so worktrees do not inherit trust`);
+    }
+    return trust;
+  }
 
   const removeHook = server.addHook("agent.open.before", async ({ request }, context) => {
     // Paseo opens an archived agent only to read its history, which runs nothing,
@@ -24,7 +39,8 @@ export default function contribute(server: PluginServerContext) {
     if (request.purpose === "history") return request;
     const signal = AbortSignal.any([context.signal, AbortSignal.timeout(LOAD_TIMEOUT_MS)]);
     try {
-      const { state, env } = await loadEnvironment(request.cwd, signal);
+      const { trustWorktrees } = await currentTrust(signal);
+      const { state, env } = await loadEnvironment(request.cwd, signal, { trustWorktrees });
       states.set(request.agentId, state);
       if (state.state !== "loaded") return request;
       return { ...request, env: mergeEnv(request.env, env) };
@@ -125,6 +141,11 @@ export default function contribute(server: PluginServerContext) {
     }
   });
 
+  server.handle(worktreeTrustRpc, async () => {
+    const { trustWorktrees, fromVariable } = await currentTrust();
+    return { trustWorktrees, fromVariable };
+  });
+
   server.handle(reloadRpc, async ({ agentId }, { paseo }) => {
     const state = (await current(agentId)).state;
     if (state !== "ready" && state !== "stale") {
@@ -143,6 +164,17 @@ export default function contribute(server: PluginServerContext) {
     removeCloseHook();
     states.clear();
   };
+}
+
+/** Settles with `work`, or rejects once `signal` aborts first. */
+function beforeAbort<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 function describe(error: unknown): string {
