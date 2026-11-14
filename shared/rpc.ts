@@ -57,7 +57,7 @@ export const denyRpc = defineRpc({
 // The effective worktree trust on the daemon, which the client cannot work out
 // itself since it cannot see the daemon's environment.
 export const worktreeTrustRpc = defineRpc({
-  name: "direnv.worktreeTrust",
+  name: "direnv.worktree-trust",
   input: z.object({}),
   output: z.object({ trustWorktrees: z.boolean(), fromVariable: z.boolean() }),
 });
